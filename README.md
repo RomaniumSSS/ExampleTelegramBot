@@ -53,7 +53,15 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Регистрация бота и получение токена
+### 4. Инициализация базы данных
+
+При первом запуске (или после обновлений структуры БД) необходимо применить миграции, чтобы создать файл базы данных и необходимые таблицы:
+
+```bash
+aerich upgrade
+```
+
+### 5. Регистрация бота и получение токена
 
 Чтобы бот заработал, его нужно создать в Telegram и получить уникальный ключ доступа (токен).
 
@@ -85,10 +93,24 @@ BOT_TOKEN=705678901:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw
 
 Убедитесь, что виртуальное окружение активировано (см. шаг 2) и все настройки выполнены.
 
-Запустите бота командой:
+Запустите бота командой (из корня проекта):
 
+**Для macOS и Linux:**
 ```bash
-python main.py
+export PYTHONPATH=$PYTHONPATH:$(pwd)/src
+python -m src.vibe_tracker_bot.main
+```
+
+**Для Windows (CMD):**
+```cmd
+set PYTHONPATH=%PYTHONPATH%;%cd%\src
+python -m src.vibe_tracker_bot.main
+```
+
+**Для Windows (PowerShell):**
+```powershell
+$env:PYTHONPATH = "$env:PYTHONPATH;$(Get-Location)\src"
+python -m src.vibe_tracker_bot.main
 ```
 
 Если все сделано верно, в консоли появится сообщение о запуске. Теперь вы можете найти своего бота в Telegram по юзернейму и нажать `/start`.
