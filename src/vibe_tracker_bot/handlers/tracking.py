@@ -5,6 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from ..database.models import User, MoodLog
+from ..services.stats import get_weekly_stats
 
 tracking_router = Router()
 
@@ -47,6 +48,35 @@ async def cmd_log(message: types.Message, state: FSMContext):
         "Оцени свой уровень энергии/вайба от 1 до 10:",
         reply_markup=get_rating_keyboard(),
     )
+
+
+@tracking_router.message(Command("stats"))
+async def cmd_stats(message: types.Message):
+    """Shows weekly statistics."""
+    stats = await get_weekly_stats(message.from_user.id)
+
+    if not stats or stats["count"] == 0:
+        await message.answer(
+            "У тебя еще нет записей за последние 7 дней. Начни с /log!"
+        )
+        return
+
+    # Format dates
+    best_date = (
+        stats["best_day_date"].strftime("%d.%m") if stats["best_day_date"] else "-"
+    )
+    worst_date = (
+        stats["worst_day_date"].strftime("%d.%m") if stats["worst_day_date"] else "-"
+    )
+
+    text = (
+        "📊 <b>Твоя статистика за 7 дней:</b>\n\n"
+        f"⚡ Средний вайб: <b>{stats['average']}</b>\n"
+        f"📉 Минимум: <b>{stats['min_val']}</b> ({worst_date})\n"
+        f"📈 Максимум: <b>{stats['max_val']}</b> ({best_date})\n"
+        f"📝 Всего записей: {stats['count']}"
+    )
+    await message.answer(text, parse_mode="HTML")
 
 
 @tracking_router.callback_query(F.data.startswith("rate:"))
