@@ -1,5 +1,7 @@
 from aiogram import Router, types
 from aiogram.filters import CommandStart
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
 from src.vibe_tracker_bot.database.models import User
 
 router = Router()
@@ -23,11 +25,16 @@ async def cmd_start(message: types.Message):
         user.username = username
         await user.save()
 
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Пройти квиз", callback_data="onboard:start")],
+            [InlineKeyboardButton(text="Пропустить", callback_data="onboard:skip")],
+        ]
+    )
+
     await message.answer(
         f"Привет, {message.from_user.first_name}! 👋\n\n"
-        "Я Vibe Tracker — помогаю следить за твоим настроением и энергией.\n\n"
-        "<b>Доступные команды:</b>\n"
-        "📝 /log — отметить своё состояние\n"
-        "📊 /stats — статистика за неделю",
-        parse_mode="HTML",
+        "Я Vibe Tracker — помогу собрать персональный трекер настроения."
+        " За минуту подберём флоу и сделаем первый лог.",
+        reply_markup=keyboard,
     )

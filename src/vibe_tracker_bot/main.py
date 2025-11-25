@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
 from src.vibe_tracker_bot.database.core import init_db, close_db
-from src.vibe_tracker_bot.handlers import common, tracking
+from src.vibe_tracker_bot.handlers import common, onboarding, tracking
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +38,7 @@ async def main():
 
     # Register routers
     dp.include_router(common.router)
+    dp.include_router(onboarding.onboarding_router)
     dp.include_router(tracking.tracking_router)
 
     # Register startup/shutdown hooks
