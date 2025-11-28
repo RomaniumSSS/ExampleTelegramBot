@@ -1,4 +1,5 @@
 from aiogram import Router, F, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -13,6 +14,22 @@ tracking_router = Router()
 
 class TrackingState(StatesGroup):
     waiting_for_note = State()
+
+
+async def safe_edit_text(
+    message: types.Message, text: str, reply_markup: InlineKeyboardMarkup | None = None
+) -> bool:
+    """
+    Edits message text safely, ignoring 'message is not modified' errors.
+    Returns True if message was modified, False if it was already the same.
+    """
+    try:
+        await message.edit_text(text=text, reply_markup=reply_markup)
+        return True
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return False
+        raise
 
 
 def get_rating_keyboard() -> InlineKeyboardMarkup:
@@ -134,15 +151,23 @@ async def process_chart_selection(callback: types.CallbackQuery):
     try:
         period = callback.data.split(":")[1]
 
+        if not callback.message:
+            return
+
         # Notify user that bot is working
-        await callback.message.edit_text("Рисую график... 🎨")
+        if not await safe_edit_text(callback.message, "Рисую график... 🎨"):
+            # If message is already "Рисую график...", it means another request
+            # is processing. We stop here to prevent race conditions.
+            await callback.answer()
+            return
 
         # Generate chart
         chart_buf = await generate_mood_chart(callback.from_user.id, period)
 
         if not chart_buf:
-            await callback.message.edit_text(
-                "Недостаточно данных для графика за этот период. 😔\nПопробуй /log!"
+            await safe_edit_text(
+                callback.message,
+                "Недостаточно данных для графика за этот период. 😔\nПопробуй /log!",
             )
             return
 
@@ -150,7 +175,12 @@ async def process_chart_selection(callback: types.CallbackQuery):
         photo = BufferedInputFile(chart_buf.read(), filename=f"chart_{period}.png")
 
         # Delete the "Drawing..." message and send photo
-        await callback.message.delete()
+        try:
+            await callback.message.delete()
+        except Exception:
+            # Ignore if message cannot be deleted (already deleted or too old)
+            pass
+
         await callback.message.answer_photo(
             photo=photo, caption=f"Твой график настроения за {period_name} 📊"
         )
@@ -159,7 +189,11 @@ async def process_chart_selection(callback: types.CallbackQuery):
         import logging
 
         logging.error(f"Error in process_chart_selection: {e}", exc_info=True)
-        await callback.message.answer(f"Ошибка при построении графика: {e}")
+        # Try to notify user, but ignore if message not modified/deleted
+        try:
+            await callback.message.answer(f"Ошибка при построении графика: {e}")
+        except Exception:
+            pass
         await callback.answer()
 
 
@@ -170,7 +204,8 @@ async def process_rating(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(rating=rating)
     await state.set_state(TrackingState.waiting_for_note)
 
-    await callback.message.edit_text(
+    await safe_edit_text(
+        callback.message,
         f"Принято: {rating}/10.\n\n"
         "Хочешь добавить заметку? Напиши её или нажми кнопку:",
         reply_markup=get_skip_keyboard(),
@@ -210,7 +245,7 @@ async def process_skip_note(callback: types.CallbackQuery, state: FSMContext):
     await MoodLog.create(user=user, value=rating, note=None)
 
     await state.clear()
-    await callback.message.edit_text(
-        f"Принято: {rating}/10.\n✅ Запись сохранена (без заметки)."
+    await safe_edit_text(
+        callback.message, f"Принято: {rating}/10.\n✅ Запись сохранена (без заметки)."
     )
     await callback.answer()

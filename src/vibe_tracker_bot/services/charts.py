@@ -1,13 +1,7 @@
 import asyncio
 import io
-import matplotlib
-
-# Set backend before importing pyplot to avoid GUI issues
-try:
-    matplotlib.use("Agg")
-except Exception:
-    pass
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 from ..database.models import MoodLog, User
@@ -15,11 +9,12 @@ from ..database.models import MoodLog, User
 
 def _draw_chart(dates: list, values: list, title: str, period: str) -> io.BytesIO:
     """
-    Synchronous function to draw chart using matplotlib.
+    Synchronous function to draw chart using matplotlib (OO interface).
     Run this in a separate thread to avoid blocking the event loop.
     """
-    # Create figure
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # Create figure and axes directly (Stateless approach)
+    fig = Figure(figsize=(10, 6), dpi=100)
+    ax = fig.add_subplot(111)
 
     # Plot data
     ax.plot(
@@ -52,14 +47,12 @@ def _draw_chart(dates: list, values: list, title: str, period: str) -> io.BytesI
 
     fig.autofmt_xdate()
 
-    # Save to buffer
+    # Save to buffer using FigureCanvasAgg
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    FigureCanvasAgg(fig).print_png(buf)
     buf.seek(0)
 
-    # Close figure to free memory
-    plt.close(fig)
-
+    # No need to plt.close(fig) as we didn't use the global state
     return buf
 
 

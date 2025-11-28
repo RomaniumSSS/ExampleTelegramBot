@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from src.vibe_tracker_bot.database.core import init_db, close_db
 from src.vibe_tracker_bot.handlers import common, tracking
+from src.vibe_tracker_bot.middlewares.event_logging import LoggingMiddleware
 
 # Load environment variables
 load_dotenv()
@@ -47,6 +48,10 @@ async def main():
 
     bot = Bot(token=bot_token)
     dp = Dispatcher()
+
+    # Register middlewares
+    dp.message.middleware(LoggingMiddleware())
+    dp.callback_query.middleware(LoggingMiddleware())
 
     # Register routers
     dp.include_router(common.router)

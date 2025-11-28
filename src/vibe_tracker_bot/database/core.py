@@ -1,5 +1,6 @@
 from tortoise import Tortoise
 import os
+import logging
 
 # For MVP we use SQLite. In production, use os.getenv("DB_URL")
 DB_URL = os.getenv("DB_URL", "sqlite://db.sqlite3")
@@ -17,7 +18,15 @@ TORTOISE_ORM = {
 
 async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
-    pass
+    
+    # Enable WAL mode for SQLite to improve concurrency
+    if DB_URL.startswith("sqlite://"):
+        try:
+            conn = Tortoise.get_connection("default")
+            await conn.execute_script("PRAGMA journal_mode=WAL;")
+            logging.info("Enabled SQLite WAL mode")
+        except Exception as e:
+            logging.warning(f"Failed to enable WAL mode: {e}")
 
 
 async def close_db() -> None:
