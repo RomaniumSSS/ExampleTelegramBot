@@ -2,10 +2,11 @@ from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 
 from ..database.models import User, MoodLog
 from ..services.stats import get_weekly_stats
+from ..services.charts import generate_mood_chart
 
 tracking_router = Router()
 
@@ -36,6 +37,31 @@ def get_skip_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Пропустить", callback_data="skip_note")]
+        ]
+    )
+
+
+def get_chart_type_keyboard() -> InlineKeyboardMarkup:
+    """Creates buttons for chart period selection."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📅 За день", callback_data="chart:day"),
+                InlineKeyboardButton(text="🗓 За неделю", callback_data="chart:week"),
+            ]
+        ]
+    )
+
+
+def get_stats_keyboard() -> InlineKeyboardMarkup:
+    """Creates button to view mood chart from stats."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 График настроения", callback_data="open_chart_menu"
+                )
+            ]
         ]
     )
 
@@ -76,7 +102,65 @@ async def cmd_stats(message: types.Message):
         f"📈 Максимум: <b>{stats['max_val']}</b> ({best_date})\n"
         f"📝 Всего записей: {stats['count']}"
     )
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML", reply_markup=get_stats_keyboard())
+
+
+@tracking_router.message(Command("moodchart"))
+async def cmd_moodchart(message: types.Message):
+    """Asks for chart period."""
+    try:
+        await message.answer(
+            "За какой период построить график?", reply_markup=get_chart_type_keyboard()
+        )
+    except Exception as e:
+        import logging
+
+        logging.error(f"Error in cmd_moodchart: {e}", exc_info=True)
+        await message.answer(f"Произошла ошибка при вызове команды: {e}")
+
+
+@tracking_router.callback_query(F.data == "open_chart_menu")
+async def process_open_chart_menu(callback: types.CallbackQuery):
+    """Opens chart menu from stats button."""
+    await callback.message.answer(
+        "За какой период построить график?", reply_markup=get_chart_type_keyboard()
+    )
+    await callback.answer()
+
+
+@tracking_router.callback_query(F.data.startswith("chart:"))
+async def process_chart_selection(callback: types.CallbackQuery):
+    """Handles chart period selection and sends the graph."""
+    try:
+        period = callback.data.split(":")[1]
+
+        # Notify user that bot is working
+        await callback.message.edit_text("Рисую график... 🎨")
+
+        # Generate chart
+        chart_buf = await generate_mood_chart(callback.from_user.id, period)
+
+        if not chart_buf:
+            await callback.message.edit_text(
+                "Недостаточно данных для графика за этот период. 😔\nПопробуй /log!"
+            )
+            return
+
+        period_name = "сегодня" if period == "day" else "последние 7 дней"
+        photo = BufferedInputFile(chart_buf.read(), filename=f"chart_{period}.png")
+
+        # Delete the "Drawing..." message and send photo
+        await callback.message.delete()
+        await callback.message.answer_photo(
+            photo=photo, caption=f"Твой график настроения за {period_name} 📊"
+        )
+        await callback.answer()
+    except Exception as e:
+        import logging
+
+        logging.error(f"Error in process_chart_selection: {e}", exc_info=True)
+        await callback.message.answer(f"Ошибка при построении графика: {e}")
+        await callback.answer()
 
 
 @tracking_router.callback_query(F.data.startswith("rate:"))

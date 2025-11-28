@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand
 from dotenv import load_dotenv
 
 from src.vibe_tracker_bot.database.core import init_db, close_db
@@ -9,6 +10,17 @@ from src.vibe_tracker_bot.handlers import common, tracking
 
 # Load environment variables
 load_dotenv()
+
+
+async def set_commands(bot: Bot):
+    """Sets the bot's command list."""
+    commands = [
+        BotCommand(command="start", description="Начать работу"),
+        BotCommand(command="log", description="Отметить вайб"),
+        BotCommand(command="stats", description="Статистика"),
+        BotCommand(command="moodchart", description="График настроения"),
+    ]
+    await bot.set_my_commands(commands)
 
 
 async def on_startup(dispatcher: Dispatcher):
@@ -46,6 +58,8 @@ async def main():
 
     logging.info("Bot started")
     try:
+        # Set commands on startup
+        await set_commands(bot)
         await dp.start_polling(bot)
     except Exception as e:
         logging.error(f"An error occurred: {e}")
