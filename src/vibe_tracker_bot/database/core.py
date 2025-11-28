@@ -1,6 +1,16 @@
 from tortoise import Tortoise
 import os
 import logging
+import sqlite3
+import datetime
+
+
+# Fix for sqlite3 not handling datetime.time by default
+def adapt_time(t):
+    return t.isoformat()
+
+
+sqlite3.register_adapter(datetime.time, adapt_time)
 
 # For MVP we use SQLite. In production, use os.getenv("DB_URL")
 DB_URL = os.getenv("DB_URL", "sqlite://db.sqlite3")
@@ -18,7 +28,7 @@ TORTOISE_ORM = {
 
 async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
-    
+
     # Enable WAL mode for SQLite to improve concurrency
     if DB_URL.startswith("sqlite://"):
         try:

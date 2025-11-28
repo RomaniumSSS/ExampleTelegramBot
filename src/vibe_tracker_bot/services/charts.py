@@ -4,6 +4,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
+import pytz
 from ..database.models import MoodLog, User
 
 
@@ -14,6 +15,7 @@ def _draw_chart(dates: list, values: list, title: str, period: str) -> io.BytesI
     """
     # Create figure and axes directly (Stateless approach)
     fig = Figure(figsize=(10, 6), dpi=100)
+    FigureCanvasAgg(fig)  # Attach canvas
     ax = fig.add_subplot(111)
 
     # Plot data
@@ -49,7 +51,7 @@ def _draw_chart(dates: list, values: list, title: str, period: str) -> io.BytesI
 
     # Save to buffer using FigureCanvasAgg
     buf = io.BytesIO()
-    FigureCanvasAgg(fig).print_png(buf)
+    fig.savefig(buf, format="png")
     buf.seek(0)
 
     # No need to plt.close(fig) as we didn't use the global state
@@ -65,28 +67,58 @@ async def generate_mood_chart(user_id: int, period: str) -> io.BytesIO | None:
     if not user:
         return None
 
-    now = datetime.now()
+    # Resolve User Timezone
+    try:
+        user_tz = pytz.timezone(user.timezone)
+    except (pytz.UnknownTimeZoneError, AttributeError):
+        user_tz = pytz.utc
+
+    # Current UTC time
+    now_utc = datetime.now(pytz.utc)
+    # Current User time
+    now_user = now_utc.astimezone(user_tz)
 
     if period == "day":
-        # Start of today (00:00)
-        start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Start of today in USER's timezone
+        start_of_day_user = now_user.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Convert back to UTC for DB filtering
+        # Note: We assume DB stores Naive UTC or Aware UTC.
+        # Tortoise usually stores naive UTC if not configured otherwise.
+        start_time_utc = start_of_day_user.astimezone(pytz.utc)
+
         title = "Mood Chart (Today)"
     elif period == "week":
-        # Last 7 days
-        start_time = now - timedelta(days=7)
+        # Last 7 days relative to now
+        start_time_utc = now_utc - timedelta(days=7)
         title = "Mood Chart (Last 7 Days)"
     else:
         return None
 
-    logs = await MoodLog.filter(user=user, created_at__gte=start_time).order_by(
+    # Filter logs. Tortoise might expect naive datetime if fields are naive.
+    # Using naive UTC for safety with SQLite default
+    start_time_naive = start_time_utc.replace(tzinfo=None)
+
+    logs = await MoodLog.filter(user=user, created_at__gte=start_time_naive).order_by(
         "created_at"
     )
 
     if not logs:
         return None
 
-    dates = [log.created_at for log in logs]
-    values = [log.value for log in logs]
+    # Prepare data for plotting
+    dates = []
+    values = []
+
+    for log in logs:
+        # log.created_at is likely naive UTC from DB
+        created_at = log.created_at
+        if created_at.tzinfo is None:
+            created_at = pytz.utc.localize(created_at)
+
+        # Convert to user timezone for display
+        local_time = created_at.astimezone(user_tz)
+        dates.append(local_time)
+        values.append(log.value)
 
     # Run blocking plotting code in a separate thread
     return await asyncio.to_thread(_draw_chart, dates, values, title, period)

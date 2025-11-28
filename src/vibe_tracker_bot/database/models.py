@@ -1,4 +1,5 @@
 from tortoise import fields, models
+import datetime
 
 
 class User(models.Model):
@@ -6,6 +7,12 @@ class User(models.Model):
     telegram_id = fields.BigIntField(unique=True, index=True)
     username = fields.CharField(max_length=255, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
+
+    # Reminders
+    reminders_enabled = fields.BooleanField(default=False)
+    reminder_morning_time = fields.TimeField(null=True, default=datetime.time(9, 0))
+    reminder_evening_time = fields.TimeField(null=True, default=datetime.time(20, 0))
+    timezone = fields.CharField(max_length=50, default="UTC")
 
     mood_logs: fields.ReverseRelation["MoodLog"]
 

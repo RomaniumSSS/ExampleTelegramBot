@@ -6,8 +6,9 @@ from aiogram.types import BotCommand
 from dotenv import load_dotenv
 
 from src.vibe_tracker_bot.database.core import init_db, close_db
-from src.vibe_tracker_bot.handlers import common, tracking
+from src.vibe_tracker_bot.handlers import common, tracking, reminders
 from src.vibe_tracker_bot.middlewares.event_logging import LoggingMiddleware
+from src.vibe_tracker_bot.services.scheduler import start_scheduler
 
 # Load environment variables
 load_dotenv()
@@ -20,13 +21,16 @@ async def set_commands(bot: Bot):
         BotCommand(command="log", description="Отметить вайб"),
         BotCommand(command="stats", description="Статистика"),
         BotCommand(command="moodchart", description="График настроения"),
+        BotCommand(command="reminders", description="Напоминания"),
     ]
     await bot.set_my_commands(commands)
 
 
-async def on_startup(dispatcher: Dispatcher):
+async def on_startup(dispatcher: Dispatcher, bot: Bot):
     logging.info("Starting up...")
     await init_db()
+    # Start scheduler after DB is ready
+    start_scheduler(bot)
 
 
 async def on_shutdown(dispatcher: Dispatcher):
@@ -56,6 +60,7 @@ async def main():
     # Register routers
     dp.include_router(common.router)
     dp.include_router(tracking.tracking_router)
+    dp.include_router(reminders.router)
 
     # Register startup/shutdown hooks
     dp.startup.register(on_startup)

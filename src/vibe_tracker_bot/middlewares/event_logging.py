@@ -28,6 +28,7 @@ class LoggingMiddleware(BaseMiddleware):
         user_id = "unknown"
 
         # Try to extract user_id safely
+        # "from_user" exists on Message, CallbackQuery, InlineQuery, etc.
         if hasattr(event, "from_user") and event.from_user:
             user_id = event.from_user.id
         elif (
@@ -35,8 +36,8 @@ class LoggingMiddleware(BaseMiddleware):
             and hasattr(event.message, "from_user")
             and event.message.from_user
         ):
-            # For CallbackQuery
-            user_id = event.message.from_user.id
+            # Fallback for events that might not have from_user directly
+            pass
 
         # Log if slow (> 1s)
         if duration > 1.0:

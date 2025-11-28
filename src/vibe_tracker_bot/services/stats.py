@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import TypedDict, Optional
+import pytz
 
 from ..database.models import MoodLog, User
 
@@ -16,17 +17,33 @@ class StatsResult(TypedDict):
 async def get_weekly_stats(telegram_id: int) -> Optional[StatsResult]:
     """
     Calculates statistics for the last 7 days for a given user.
+    Respects user's timezone for the day boundary.
     """
     user = await User.get_or_none(telegram_id=telegram_id)
     if not user:
         return None
 
-    # Calculate time window (last 7 days)
-    now = datetime.now()
-    seven_days_ago = now - timedelta(days=7)
+    # Resolve User Timezone
+    try:
+        user_tz = pytz.timezone(user.timezone)
+    except (pytz.UnknownTimeZoneError, AttributeError):
+        user_tz = pytz.utc
+
+    # Calculate time window (last 7 days) relative to user's "now"
+    now_utc = datetime.now(pytz.utc)
+    now_user = now_utc.astimezone(user_tz)
+
+    # Start of 7 days ago in user time
+    seven_days_ago_user = now_user - timedelta(days=7)
+
+    # Convert back to UTC for DB query (assuming DB stores naive UTC or we strip info)
+    start_time_utc = seven_days_ago_user.astimezone(pytz.utc)
+
+    # Tortoise/SQLite usually work with naive UTC.
+    start_time_naive = start_time_utc.replace(tzinfo=None)
 
     # Fetch logs
-    logs = await MoodLog.filter(user=user, created_at__gte=seven_days_ago).order_by(
+    logs = await MoodLog.filter(user=user, created_at__gte=start_time_naive).order_by(
         "-created_at"
     )
 
@@ -48,17 +65,20 @@ async def get_weekly_stats(telegram_id: int) -> Optional[StatsResult]:
     max_val = max(values)
 
     # Find specific logs for dates
-    # Note: In a real app with multiple logs per day,
-    # we might want to aggregate by day first.
-    # For MVP, we just take the timestamp of the record with max/min value.
     best_log = next((log for log in logs if log.value == max_val), None)
     worst_log = next((log for log in logs if log.value == min_val), None)
+
+    # Helper to convert log time to user timezone
+    def to_user_tz(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            dt = pytz.utc.localize(dt)
+        return dt.astimezone(user_tz)
 
     return {
         "average": round(avg_val, 1),
         "min_val": min_val,
         "max_val": max_val,
         "count": len(logs),
-        "best_day_date": best_log.created_at if best_log else None,
-        "worst_day_date": worst_log.created_at if worst_log else None,
+        "best_day_date": to_user_tz(best_log.created_at) if best_log else None,
+        "worst_day_date": to_user_tz(worst_log.created_at) if worst_log else None,
     }
